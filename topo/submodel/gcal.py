@@ -12,7 +12,7 @@ import topo.transferfn.misc
 from topo.submodel import Model, ArraySpec, order_projections # pyflakes:ignore (API import)
 from topo.submodel.earlyvision import EarlyVisionModel
 
-from topo.sparse.sparsecf import SparseConnectionField, CFPLF_Hebbian_Sparse, CFPOF_DivisiveNormalizeL1_Sparse, CFPRF_DotProduct_Sparse, CFPRF_DotProduct_Sparse_GPU, compute_sparse_joint_norm_totals
+from topo.sparse.sparsecf import SparseConnectionField, CFPLF_Hebbian_Sparse, CFPOF_DivisiveNormalizeL1_Sparse, CFPRF_DotProduct_Sparse, CFPRF_DotProduct_Sparse_GPU, CFPLF_Hebbian_Sparse_GPU, compute_sparse_joint_norm_totals
 
 
 @Model.definition
@@ -245,7 +245,7 @@ class SparseGPUGCAL(ModelGCAL):
         return dict(params[0],
                     cf_type = SparseConnectionField,
                     response_fn = CFPRF_DotProduct_Sparse_GPU,
-                    learning_fn = CFPLF_Hebbian_Sparse,
+                    learning_fn = CFPLF_Hebbian_Sparse_GPU,
                     weights_output_fns = [CFPOF_DivisiveNormalizeL1_Sparse])
 
     @Model.SettlingCFSheet
