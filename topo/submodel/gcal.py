@@ -245,7 +245,7 @@ class SparseGPUGCAL(ModelGCAL):
         return dict(params[0],
                     cf_type = SparseConnectionField,
                     response_fn = CFPRF_DotProduct_Sparse_GPU,
-                    learning_fn = CFPLF_Hebbian_Sparse_GPU,
+                    learning_fn = CFPLF_Hebbian_Sparse,
                     weights_output_fns = [CFPOF_DivisiveNormalizeL1_Sparse])
 
     @Model.SettlingCFSheet
