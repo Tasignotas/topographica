@@ -34,8 +34,8 @@ from topo.plotting.plot import make_template_plot
 from param import ParameterizedFunction, normalize_path
 from param.parameterized import ParamOverrides
 
-from dataviews import DataOverlay
-from dataviews.plotting import DataPlot, GridLayout, CurvePlot
+from holoviews import Overlay
+from holoviews.plotting import OverlayPlot, GridLayout, CurvePlot
 
 from topo.command import Command
 
@@ -454,10 +454,10 @@ class topographic_grid(xy_grid):
     """
 
     xsheet_view_name = param.String(default='XPreference',doc="""
-        Name of the SheetView holding the X position locations.""")
+        Name of the Matrix holding the X position locations.""")
 
     ysheet_view_name = param.String(default='YPreference',doc="""
-        Name of the SheetView holding the Y position locations.""")
+        Name of the Matrix holding the Y position locations.""")
 
     # Disable and hide parameters inherited from the base class
     x = param.Array(constant=True, precedence=-1)
@@ -616,27 +616,27 @@ class tuning_curve(PylabPlotCommand):
         p = ParamOverrides(self, params, allow_extra_keywords=True)
 
         x_axis = p.x_axis.capitalize()
-        stack = p.sheet.views.Curves[x_axis.capitalize()+"Tuning"]
-        time = stack.dim_range('Time')[1]
+        vmap = p.sheet.views.Curves[x_axis.capitalize()+"Tuning"]
+        time = vmap.dim_range('Time')[1]
 
         curves = []
-        if stack.dimension_labels[0] == 'X':
+        if vmap.dimension_labels[0] == 'X':
             for coord in p.coords:
                 x, y = coord
-                current_stack = stack[x, y, time, :, :, :]
-                curve_stack = current_stack.sample(X=x, Y=y).collate(p.x_axis.capitalize())
-                curves.append(curve_stack.overlay_dimensions(p.group_by))
+                current_map = vmap[x, y, time, :, :, :]
+                curve_map = current_map.sample(X=x, Y=y).collate(p.x_axis.capitalize())
+                curves.append(curve_map.overlay(p.group_by))
         else:
-            current_stack = stack[time, :, :, :]
-            curve_stack = current_stack.sample(coords=p.coords).collate(p.x_axis.capitalize())
-            overlaid_curves = curve_stack.overlay_dimensions(p.group_by)
+            current_map = vmap[time, :, :, :]
+            curve_map = current_map.sample(p.coords).collate(p.x_axis.capitalize())
+            overlaid_curves = curve_map.overlay(p.group_by)
             if not isinstance(curves, GridLayout): curves = [overlaid_curves]
 
         figs = []
         for coord, curve in zip(p.coords,curves):
             fig = plt.figure()
             ax = plt.subplot(111)
-            plot = DataPlot if isinstance(curve.last, DataOverlay) else CurvePlot
+            plot = OverlayPlot if isinstance(curve.last, Overlay) else CurvePlot
             plot(curve, center=p.center, relative_labels=p.relative_labels,
                  show_legend=p.legend)(ax)
             self._generate_figure(p, fig)

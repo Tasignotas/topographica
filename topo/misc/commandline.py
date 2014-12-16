@@ -8,7 +8,7 @@ Topographica files within a separate Python.
 
 from optparse import OptionParser
 
-import sys, __main__, math, os, re
+import sys, __main__, math, os, re, traceback
 
 import topo
 
@@ -25,8 +25,9 @@ from topo.base.simulation import OptionalSingleton
 
 try:
     # By default, use a non-GUI backend for matplotlib.
-    from matplotlib import rcParams
-    rcParams['backend']='Agg'
+    from matplotlib import pyplot as plt
+    plt.switch_backend('agg')
+
     matplotlib_imported=True
 except ImportError:
     matplotlib_imported=False
@@ -412,6 +413,15 @@ topo_parser.add_option("-v","--verbose",action="callback",callback=v_action,dest
 enable verbose messaging output""")
 
 
+def V_action(option,opt_str,value,parser):
+    """Callback function for the -V option."""
+    print topo.__version__
+    sys.exit()
+
+topo_parser.add_option("-V","--version",action="callback",callback=V_action,dest="version",default=False,help="""\
+print the Topographica version string and exit""")
+
+
 def d_action(option,opt_str,value,parser):
     """Callback function for the -d option."""
     cmdline_main.message("Enabling debugging message output.")
@@ -448,7 +458,7 @@ topo_parser.add_option("-o","--outputpath",action="callback",callback=o_action,t
 def gui(start=True,exit_on_quit=True):
     """Start the GUI as if -g were supplied in the command used to launch Topographica."""
     if matplotlib_imported:
-        rcParams['backend']='TkAgg'
+        plt.switch_backend('TkAgg')
     auto_import_commands()
     if start:
         import topo.tkgui
@@ -782,7 +792,12 @@ def process_argv(argv):
                 ipshell.call_pdb = True
 
             # Load Topographica IPython extension in embedded shell
-            ipshell.extension_manager.load_extension('topo.misc.ipython')
+            try:
+                ipshell.extension_manager.load_extension('topo.misc.ipython')
+            except:
+                cmdline_main.warning(
+                    "Could not load IPython extension 'topo.misc.ipython'; ignored error was:\n%s"%traceback.format_exc())
+                
             ipshell()
 
     global return_code

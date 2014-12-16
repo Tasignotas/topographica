@@ -144,21 +144,20 @@ class ExportMagic(Magics):
 # Display hooks #
 #===============#
 
-from topo.base.sheetview import CFView, CFStack
+from topo.base.sheetview import CFView
 
-from dataviews.ipython import load_ipython_extension as load_imagen_extension
-from dataviews.ipython.display_hooks import stack_display, view_display
-from dataviews.plotting import SheetViewPlot, Plot
+from holoviews.ipython import load_ipython_extension as load_imagen_extension
+from holoviews.ipython.display_hooks import map_display, view_display
+from holoviews.plotting import MatrixPlot, Plot
 
-from dataviews.ipython.widgets import RunProgress
+from holoviews.ipython.widgets import RunProgress
 RunProgress.run_hook = topo.sim.run
 
-Plot.defaults.update({CFView: SheetViewPlot,
-                      CFStack: SheetViewPlot})
+Plot.defaults.update({CFView: MatrixPlot})
 
 try:
     from lancet import ViewFrame
-    ViewFrame.display_fns.append(stack_display)
+    ViewFrame.display_fns.append(map_display)
     ViewFrame.display_fns.append(view_display)
 except:
     pass

@@ -9,7 +9,7 @@ import numpy as np
 
 import param
 import imagen
-from dataviews import SheetView
+from holoviews import Matrix
 
 import topo
 import topo.base.functionfamily
@@ -234,7 +234,7 @@ class TemporalScatter(TransferFnWithState):
 
     def view_depth_map(self, mode='both'):
         """
-        Visualize the depth map using dataviews, including
+        Visualize the depth map using holoviews, including
         distribution histograms.
 
         Mode may be one of 'discrete', 'raw' or 'both':
@@ -253,14 +253,13 @@ class TemporalScatter(TransferFnWithState):
         """
         views = []
         if mode in ['raw', 'both']:
-            views.append(SheetView(self.raw_depth_map,
-                                   label = 'Pattern',
-                                   name='Raw Depth map').hist())
+            views.append(Matrix(self.raw_depth_map, label='Pattern',
+                                name='Raw Depth map').hist())
 
         if mode in ['discrete', 'both']:
             scaled_map = (self.depth_map * self.timestep)
-            discrete_sv = SheetView(scaled_map,
-                                    label = 'Pattern', name='Depth map')
+            discrete_sv = Matrix(scaled_map, label='Pattern',
+                                 name='Depth map')
             views.append(discrete_sv.hist(num_bins=self.depth,
                                           bin_range=(0, self.span)))
 
@@ -317,7 +316,8 @@ class TemporalScatter(TransferFnWithState):
         self.__current_state_stack.append((copy.copy(self._buffer),
                                            copy.copy(self.first_call)))
         super(TemporalScatter,self).state_push()
-        self._buffer *= 0.0
+        if self._buffer is not None:
+            self._buffer *= 0.0
 
     def state_pop(self):
         self._buffer,self.first_call =  self.__current_state_stack.pop()
