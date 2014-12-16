@@ -17,15 +17,14 @@ the underlying ConnectionFields in any projection of type
 CFProjection.
 """
 
-
 from copy import copy
+
 import numpy as np
 
 import param
-from dataviews import CoordinateGrid, Dimension
-from dataviews.collector import AttrTree
-from dataviews.ndmapping import AttrDict
-from dataviews.sheetviews import BoundingBox, BoundingRegionParameter, Slice
+from holoviews import Grid, Dimension, ViewMap
+from holoviews.interface.collector import AttrTree, AttrDict
+from holoviews.core import BoundingBox, BoundingRegionParameter, Slice
 
 import patterngenerator
 from patterngenerator import PatternGenerator
@@ -34,7 +33,7 @@ from functionfamily import LearningFn,Hebbian,IdentityLF
 from functionfamily import ResponseFn,DotProduct
 from functionfamily import CoordinateMapperFn,IdentityMF
 from projection import Projection,ProjectionSheet
-from sheetview import CFView, CFStack
+from sheetview import CFView
 
 
 def simple_vectorize(fn,num_outputs=1,output_type=object,doc=''):
@@ -510,9 +509,6 @@ class CFProjection(Projection):
         default=CFPRF_Plugin(),
         doc='Function for computing the Projection response to an input pattern.')
 
-    input_fns = param.HookList(default=[],class_=TransferFn,doc="""
-        Function(s) applied to the input before the projection activity is computed.""")
-
     cf_type = param.Parameter(default=ConnectionField,constant=True,
         doc="Type of ConnectionField to use when creating individual CFs.")
 
@@ -646,9 +642,7 @@ class CFProjection(Projection):
 
     def _cf_grid(self, shape=None, **kwargs):
         "Create ProjectionGrid with the correct metadata."
-        grid = CoordinateGrid(self.dest.bounds, None,
-                              xdensity=self.dest.xdensity,
-                              ydensity=self.dest.ydensity)
+        grid = Grid({})
         grid.metadata = AttrDict(timestamp=self.src.simulation.time(),
                                  info=self.name,
                                  proj_src_name=self.src.name,
@@ -738,13 +732,10 @@ class CFProjection(Projection):
         half_x_unit = ((r-l) / xdensity) / 2.
         half_y_unit = ((t-b) / ydensity) / 2.
         if lbrt is None:
-            bounds = self.dest.bounds
             l, b, r, t = (l+half_x_unit, b+half_y_unit, r-half_x_unit, t-half_y_unit)
         else:
             l, b = self.dest.closest_cell_center(lbrt[0], lbrt[1])
             r, t = self.dest.closest_cell_center(lbrt[2], lbrt[3])
-            bounds = BoundingBox(points=[(l-half_x_unit, b-half_y_unit),
-                                         (r+half_x_unit, t+half_y_unit)])
         x, y = np.meshgrid(np.linspace(l, r, cols),
                            np.linspace(b, t, rows))
         coords = zip(x.flat, y.flat)
@@ -753,9 +744,8 @@ class CFProjection(Projection):
         for x, y in coords:
             grid_items[x, y] = self.view(x, y, situated=situated, **kwargs)
 
-        grid = CoordinateGrid(bounds, (cols, rows), initial_items=grid_items,
-                              title=' '.join([self.dest.name, self.name, '{label}']),
-                              label='CFs')
+        grid = Grid(grid_items, label='CFs',
+                    title=' '.join([self.dest.name, self.name, '{label}']))
         grid.metadata = AttrDict(info=self.name,
                                  proj_src_name=self.src.name,
                                  proj_dest_name=self.dest.name,
@@ -766,7 +756,7 @@ class CFProjection(Projection):
 
     def view(self, sheet_x, sheet_y, timestamp=None, situated=False, **kwargs):
         """
-        Return a single connection field SheetView, for the unit
+        Return a single connection field Matrix, for the unit
         located nearest to sheet coordinate (sheet_x,sheet_y).
         """
         if timestamp is None:
@@ -791,14 +781,14 @@ class CFProjection(Projection):
                     label=self.name+ " CF Weights", value='CF Weight')
         sv.metadata=AttrDict(timestamp=timestamp)
 
-        cfstack = CFStack((timestamp, sv), dimensions=[time_dim])
-        cfstack.metadata = AttrDict(coords=(sheet_x, sheet_y),
+        viewmap = ViewMap((timestamp, sv), dimensions=[time_dim])
+        viewmap.metadata = AttrDict(coords=(sheet_x, sheet_y),
                                     dest_name=self.dest.name,
                                     precedence=self.src.precedence, proj_name=self.name,
                                     src_name=self.src.name,
                                     row_precedence=self.src.row_precedence,
                                     timestamp=timestamp, **kwargs)
-        return cfstack
+        return viewmap
 
 
     def get_view(self, sheet_x, sheet_y, timestamp=None):

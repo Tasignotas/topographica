@@ -2,20 +2,21 @@
 Projection and related classes.
 """
 
+from collections import OrderedDict
+
 import numpy
 from numpy import array,asarray,ones,sometrue, logical_and, logical_or
-
-from collections import OrderedDict
 
 import param
 from param.parameterized import overridable_property
 
-from dataviews import SheetView, AttrDict
-from dataviews.collector import AttrTree
+from holoviews.interface.collector import AttrDict, AttrTree
+from holoviews.view import Matrix
 
 from sheet import Sheet
 from simulation import EPConnection
 from functionfamily import TransferFn
+
 
 class SheetMask(param.Parameterized):
     """
@@ -177,7 +178,10 @@ class Projection(EPConnection):
     dest_port = param.Parameter(default='Activity')
 
     output_fns = param.HookList(default=[],class_=TransferFn,doc="""
-        Function(s) applied to the Projection activity after it is computed.""")
+        Function(s) applied to the projection activity after it is computed.""")
+
+    input_fns = param.HookList(default=[],class_=TransferFn,doc="""
+        Function(s) applied to the input before the projection activity is computed.""")
 
     plastic = param.Boolean(default=True, doc="""
         Whether or not to update the internal state on each call.
@@ -296,8 +300,8 @@ class Projection(EPConnection):
         """Returns the activity in a single projection"""
         if timestamp is None:
             timestamp = self.src.simulation.time()
-        sv = SheetView(self.activity.copy(), self.dest.bounds,
-                         label='Activity', title='%s {label}' % self.name)
+        sv = Matrix(self.activity.copy(), self.dest.bounds,
+                    label='Activity', title='%s {label}' % self.name)
         sv.metadata=AttrDict(proj_src_name=self.src.name,
                              precedence=self.src.precedence,
                              proj_name=self.name,
@@ -312,6 +316,10 @@ class Projection(EPConnection):
         Pop the most recently pushed activity state of the stack.
         """
         self.activity = self.__saved_activity.pop()
+        for ofn in self.output_fns:
+            ofn.state_pop()
+        for ifn in self.input_fns:
+            ifn.state_pop()
 
 
     def state_push(self):
@@ -320,6 +328,10 @@ class Projection(EPConnection):
         """
 
         self.__saved_activity.append(array(self.activity))
+        for ofn in self.output_fns:
+            ofn.state_push()
+        for ifn in self.input_fns:
+            ifn.state_push()
 
 
     def get_projection_view(self, timestamp):
