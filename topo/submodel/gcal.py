@@ -233,10 +233,7 @@ class SparseGCAL(ModelGCAL):
     @Model.SettlingCFSheet
     def V1(self, properties):
         params = super(SparseGCAL, self).V1(properties)
-        return dict(params, joint_norm_fn=compute_sparse_joint_norm_totals,
-            nominal_density=param.Number(default=142.0,bounds=(0,None),
-                                                 inclusive_bounds=(False,True),doc="""
-                                                 The nominal_density to use for V1."""))
+        return dict(params, joint_norm_fn=compute_sparse_joint_norm_totals)
 
 
 @Model.definition
