@@ -27,14 +27,12 @@ from topo.base.functionfamily import ResponseFn, DotProduct
 from topo.base.sheetcoords import Slice
 
 import pycuda.gpuarray as gpuarray
+from pycuda.elementwise import ElementwiseKernel
 import pycuda.driver as cuda
 import pycuda.autoinit
-from scikits.cuda.cusparse import *
-from scikits.cuda import linalg
+import scikits.cuda.cusparse as cusparse
 
-linalg.init()
-
-
+cusparse.init()
 
 use_sparse = True
 try:
@@ -43,8 +41,6 @@ except:
     use_sparse = False
 
 sparse_type = np.float32
-cusparse_handle = cusparseCreate()
-
 
 class CFSPLF_Plugin(param.Parameterized):
     """CFSPLearningFunction applying the specified single_cf_fn to each Sparse CF."""
@@ -375,8 +371,12 @@ def CFPOF_DivisiveNormalizeL1_Sparse(projection):
     projection.has_norm_total = False
 
 def CFPOF_DivisiveNormalizeL1_Sparse_GPU(projection):
-    print "Normalize GPU"
     return
+    # if not projection.has_norm_total:
+    #     projection.norm_total *= 0.0
+    #     projection.weights.CFWeightTotals(projection.norm_total)
+    # projection.weights.DivisiveNormalizeL1(projection.norm_total)
+    # projection.has_norm_total = False
 
 
 
@@ -396,43 +396,43 @@ def CFPLF_Hebbian_Sparse_GPU(projection):
     """
     Sparse CF Projection learning function applying Hebbian learning
     to the weights in a projection.
-    """
-    print "Hebbian GPU"
-    return
-    # single_conn_lr = projection.learning_rate/projection.n_units
+    """ 
+    single_conn_lr = projection.learning_rate/projection.n_units
 
-    # #print "LR: ", single_conn_lr
+    # Getting the indices of non-zero entries of the projection:
+    if not hasattr(projection, 'nzcount'):
+        nzrows, nzcols = projection.weights.nonzero()
+        projection.nzcount = projection.weights.getnnz()
+        projection.nzrows_gpu = gpuarray.to_gpu(nzrows)
+        projection.nzcols_gpu = gpuarray.to_gpu(nzcols)
 
+    # Reserving place for learning results:
+    if not hasattr(projection, 'learning_results'):
+        projection.learning_results = gpuarray.zeros((projection.weights.shape[1], projection.weights.shape[0]), np.float32)
 
-    # weights_rows, weights_cols = projection.weights.shape
-    # if not hasattr(projection, 'weights_gpu'):
-    #     projection.weights_gpu = CSR.to_CSR(projection.weights.toarray().astype(sparse_type), cusparse_handle)
-    
+    # Kernel that calculates the learning:
+    if not hasattr(projection, 'hebbian_kernel'):
+        projection.hebbian_kernel = ElementwiseKernel(
+            "float single_conn_lr, long *row, long *col, float *src_activity, float *dest_activity, float *result",
+            "result[col[i]*%d + row[i]] = single_conn_lr * src_activity[row[i]] * dest_activity[col[i]]"%projection.weights.shape[0],
+            "hebbian_learning")
 
-    # src_activity_gpu = gpuarray.to_gpu(np.reshape(projection.src.activity, (weights_rows, 1)).astype(np.float32))
-    # dest_activity_gpu = gpuarray.to_gpu(np.reshape(projection.dest.activity, (1, weights_cols)).astype(np.float32))
-    
-    # partial_gpu = CSR.to_CSR(linalg.dot(src_activity_gpu, dest_activity_gpu) * single_conn_lr, cusparse_handle)
+    # Transfering source and destination activities:
+    src_activity_gpu = gpuarray.to_gpu(np.ravel(projection.src.activity).astype(np.float32))
+    dest_activity_gpu = gpuarray.to_gpu(np.ravel(projection.dest.activity).astype(np.float32))
 
-    # #print "Partial shape: ", partial_gpu.shape
-    # #print "Weights shape: ", weights_gpu.shape
+    # Computing Hebbian learning weights:
+    projection.hebbian_kernel(single_conn_lr, projection.nzrows_gpu, projection.nzcols_gpu, src_activity_gpu, dest_activity_gpu, projection.learning_results, range=slice(0, projection.nzcount, 1))
+    # We must check if the resulting Hebbian matrix is empty. In that case, we're not supposed to add anything:
+    descrA = cusparse.cusparseCreateMatDescr()
+    cusparse.cusparseSetMatType(descrA, cusparse.CUSPARSE_MATRIX_TYPE_GENERAL)
+    cusparse.cusparseSetMatIndexBase(descrA, cusparse.CUSPARSE_INDEX_BASE_ZERO)
+    _, nonzero = cusparse.dense_nnz(descrA, projection.learning_results, handle=None, dirA=cusparse.CUSPARSE_DIRECTION_ROW, lda=projection.learning_results.shape[0]) 
 
-    # projection.weights_gpu = projection.weights_gpu.geam(partial_gpu)
-    # # projection.weights = weights_gpu.get()
+    if nonzero > 0:
+        # If there are weights to add, we add them using cusparse CSR.geam method:
+        projection.weights_gpu = projection.weights_gpu.geam(projection.learning_results)
 
-    # print projection.weights_gpu.nnz
-
-    # norm_gpu = projection.weights_gpu.mv(gpuarray.to_gpu(np.array([1.0] * weights_rows).astype(np.float32)), CUSPARSE_OPERATION_TRANSPOSE)
-    
-    # norm_total = np.reshape(norm_gpu.get(), projection.norm_total.shape)
-    
-    # projection.norm_total *= 0.0
-    # projection.weights.Hebbian(projection.src.activity, projection.dest.activity, 
-    #                            projection.norm_total, single_conn_lr)
-    # projection.has_norm_total = True
-
-
-    #print projection.norm_total
 
 def CFPLF_Hebbian_Sparse_opt(projection):
     """
@@ -447,7 +447,6 @@ def CFPLF_Hebbian_Sparse_opt(projection):
     projection.has_norm_total = True
 
 
-
 def CFPRF_DotProduct_Sparse(projection):
     """
     Sparse CF Projection response function calculating the dot-product
@@ -455,20 +454,18 @@ def CFPRF_DotProduct_Sparse(projection):
     """
     projection.weights.DotProduct(projection.strength, projection.input_buffer, projection.activity)
 
-
 def CFPRF_DotProduct_Sparse_GPU(projection):
     """
     Sparse CF Projection response function calculating the dot-product
     between incoming activities and CF weights. Uses GPU.
     """
     if not hasattr(projection, 'weights_gpu'):
-        projection.weights_gpu = CSR.to_CSR(projection.weights.toarray().astype(sparse_type), cusparse_handle)
+        projection.weights_gpu = cusparse.CSR.to_CSR(projection.weights.toarray().astype(np.float32).transpose())
     
+    input_buffer_gpu = gpuarray.to_gpu_async(np.ravel(projection.input_buffer).astype(np.float32))
+    activity_gpu = projection.weights_gpu.mv(input_buffer_gpu, alpha=projection.strength, autosync=False)
 
-    input_buffer_gpu = gpuarray.to_gpu(np.ravel(projection.input_buffer).astype(sparse_type))
-    activity_gpu = projection.weights_gpu.mv(input_buffer_gpu, transA=CUSPARSE_OPERATION_TRANSPOSE)
-
-    projection.activity = np.reshape((activity_gpu * projection.strength).get(), projection.activity.shape)
+    projection.activity = np.reshape(activity_gpu.get(), projection.activity.shape)
 
 
 def CFPRF_DotProduct_Sparse_opt(projection):
