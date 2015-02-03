@@ -339,6 +339,38 @@ class CFSPRF_Plugin(param.Parameterized):
         projection.activity *= projection.strength
 
 
+def init_gpu(projection):
+    if not hasattr(projection, 'initialized_gpu') or not projection.initialized_gpu:
+        # Transfering the weights:
+        projection.weights_gpu = cusparse.CSR.to_CSR(projection.weights.toSparseArray().transpose())
+        # Getting the row and columns indices for the *transposed* matrix. Used for Hebbian learning and normalisation:
+        nzcols, nzrows = projection.weights.nonzero()
+        tups = sorted(zip(nzrows, nzcols))
+        nzrows = [x[0] for x in tups]
+        nzcols = [x[1] for x in tups]
+        # Getting them on the GPU:
+        projection.nzcount = projection.weights.getnnz()
+        projection.nzrows_gpu = gpuarray.to_gpu(np.array(nzrows, np.int32))
+        projection.nzcols_gpu = gpuarray.to_gpu(np.array(nzcols, np.int32))
+        # Allocating a vector of zeros needed for the dot product:
+        projection.zeros_gpu = gpuarray.zeros((projection.weights_gpu.shape[0], ), np.float32)
+        # Helper array for normalization:
+        projection.norm_ones_gpu = gpuarray.to_gpu(np.array([1.0] * projection.weights_gpu.shape[1], np.float32))
+        # Kernel that applies the normalisation:
+        projection.normalize_kernel = ElementwiseKernel(
+                        "int *nzrows, float *norm_total, float *weights",
+                        "weights[i] *= 1.0/norm_total[nzrows[i]]",
+                        "divisive_normalize",
+                        options=["--use_fast_math"])
+        # Kernel that calculates the learning:
+        projection.hebbian_kernel = ElementwiseKernel(
+                        "float single_conn_lr, int *row, int *col, float *src_activity, float *dest_activity, float *result",
+                        "result[i] += single_conn_lr * src_activity[row[i]] * dest_activity[col[i]]",
+                        "hebbian_learning",
+                        options=["--use_fast_math"])
+        projection.initialized_gpu = True
+
+
 def compute_sparse_joint_norm_totals(projlist,active_units_mask=True):
     """
     Compute norm_total for each CF in each projection from a group to be
@@ -371,13 +403,16 @@ def CFPOF_DivisiveNormalizeL1_Sparse(projection):
     projection.has_norm_total = False
 
 def CFPOF_DivisiveNormalizeL1_Sparse_GPU(projection):
-    return
-    # if not projection.has_norm_total:
-    #     projection.norm_total *= 0.0
-    #     projection.weights.CFWeightTotals(projection.norm_total)
-    # projection.weights.DivisiveNormalizeL1(projection.norm_total)
-    # projection.has_norm_total = False
+    '''
+    Divisive normalisation computed on the GPU
+    '''
 
+    if not hasattr(projection, 'initialised_gpu'):
+        init_gpu(projection)
+
+    norm_total_gpu = projection.weights_gpu.mv(projection.norm_ones_gpu, y=projection.zeros_gpu, autosync=False)
+    projection.normalize_kernel(projection.nzrows_gpu, norm_total_gpu, projection.weights_gpu.Val, range=slice(0, projection.nzcount, 1))
+    projection.has_norm_total = False
 
 
 def CFPLF_Hebbian_Sparse(projection):
@@ -397,41 +432,17 @@ def CFPLF_Hebbian_Sparse_GPU(projection):
     Sparse CF Projection learning function applying Hebbian learning
     to the weights in a projection.
     """ 
+
+    if not hasattr(projection, 'initialised_gpu'):
+        init_gpu(projection)
+
     single_conn_lr = projection.learning_rate/projection.n_units
-
-    # Getting the indices of non-zero entries of the projection:
-    if not hasattr(projection, 'nzcount'):
-        nzrows, nzcols = projection.weights.nonzero()
-        projection.nzcount = projection.weights.getnnz()
-        projection.nzrows_gpu = gpuarray.to_gpu(nzrows)
-        projection.nzcols_gpu = gpuarray.to_gpu(nzcols)
-
-    # Reserving place for learning results:
-    if not hasattr(projection, 'learning_results'):
-        projection.learning_results = gpuarray.zeros((projection.weights.shape[1], projection.weights.shape[0]), np.float32)
-
-    # Kernel that calculates the learning:
-    if not hasattr(projection, 'hebbian_kernel'):
-        projection.hebbian_kernel = ElementwiseKernel(
-            "float single_conn_lr, long *row, long *col, float *src_activity, float *dest_activity, float *result",
-            "result[col[i]*%d + row[i]] = single_conn_lr * src_activity[row[i]] * dest_activity[col[i]]"%projection.weights.shape[0],
-            "hebbian_learning")
-
     # Transfering source and destination activities:
-    src_activity_gpu = gpuarray.to_gpu(np.ravel(projection.src.activity).astype(np.float32))
-    dest_activity_gpu = gpuarray.to_gpu(np.ravel(projection.dest.activity).astype(np.float32))
+    src_activity_gpu = gpuarray.to_gpu_async(np.ravel(projection.src.activity).astype(np.float32))
+    dest_activity_gpu = gpuarray.to_gpu_async(np.ravel(projection.dest.activity).astype(np.float32))
 
     # Computing Hebbian learning weights:
-    projection.hebbian_kernel(single_conn_lr, projection.nzrows_gpu, projection.nzcols_gpu, src_activity_gpu, dest_activity_gpu, projection.learning_results, range=slice(0, projection.nzcount, 1))
-    # We must check if the resulting Hebbian matrix is empty. In that case, we're not supposed to add anything:
-    descrA = cusparse.cusparseCreateMatDescr()
-    cusparse.cusparseSetMatType(descrA, cusparse.CUSPARSE_MATRIX_TYPE_GENERAL)
-    cusparse.cusparseSetMatIndexBase(descrA, cusparse.CUSPARSE_INDEX_BASE_ZERO)
-    _, nonzero = cusparse.dense_nnz(descrA, projection.learning_results, handle=None, dirA=cusparse.CUSPARSE_DIRECTION_ROW, lda=projection.learning_results.shape[0]) 
-
-    if nonzero > 0:
-        # If there are weights to add, we add them using cusparse CSR.geam method:
-        projection.weights_gpu = projection.weights_gpu.geam(projection.learning_results)
+    projection.hebbian_kernel(single_conn_lr, projection.nzrows_gpu, projection.nzcols_gpu, src_activity_gpu, dest_activity_gpu, projection.weights_gpu.Val, range=slice(0, projection.nzcount, 1))
 
 
 def CFPLF_Hebbian_Sparse_opt(projection):
@@ -459,11 +470,11 @@ def CFPRF_DotProduct_Sparse_GPU(projection):
     Sparse CF Projection response function calculating the dot-product
     between incoming activities and CF weights. Uses GPU.
     """
-    if not hasattr(projection, 'weights_gpu'):
-        projection.weights_gpu = cusparse.CSR.to_CSR(projection.weights.toarray().astype(np.float32).transpose())
-    
+    if not hasattr(projection, 'initialised_gpu'):
+        init_gpu(projection)
+        
     input_buffer_gpu = gpuarray.to_gpu_async(np.ravel(projection.input_buffer).astype(np.float32))
-    activity_gpu = projection.weights_gpu.mv(input_buffer_gpu, alpha=projection.strength, autosync=False)
+    activity_gpu = projection.weights_gpu.mv(input_buffer_gpu, alpha=projection.strength, y=projection.zeros_gpu, autosync=False)
 
     projection.activity = np.reshape(activity_gpu.get(), projection.activity.shape)
 
