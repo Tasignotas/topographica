@@ -389,6 +389,9 @@ def compute_sparse_joint_norm_totals(projlist,active_units_mask=True):
         p.norm_total = joint_sum.copy()
 
 
+def compute_sparse_gpu_joint_norm_totals(projlist,active_units_mask=True):
+    pass
+
 
 def CFPOF_DivisiveNormalizeL1_Sparse(projection):
     """
@@ -493,6 +496,11 @@ def CFPRF_DotProduct_Sparse_opt(projection):
     else:
         projection.weights.DotProduct(projection.strength, projection.src.activity, projection.activity)
 
+def CFPLF_Identity_Sparse(projection):
+    """
+    Identity learning function
+    """
+    pass
 
 
 class SparseConnectionField(param.Parameterized):
@@ -938,6 +946,151 @@ class SparseCFProjection(CFProjection):
         Returns number of nonzero weights.
         """
         return self.weights.getnnz()
+
+
+class SharedWeightSparseCF(SparseConnectionField):
+
+    __slots__ = []
+
+    def __init__(self,cf,input_sheet,template):
+        """
+        From an existing copy of ConnectionField (CF) that acts as a
+        template, create a new CF that shares weights with the
+        template CF.  Copies all the properties of CF to stay
+        identical except the weights variable that actually contains
+        the data.
+
+        The only difference from a normal CF is that the weights of
+        the CF are implemented as a numpy view into the single master
+        copy of the weights stored in the CF template.
+        """
+        # CEBALERT: There's no call to super's __init__; see JAHACKALERT
+        # below.
+        template = copy(template)
+
+        if not isinstance(template,Slice):
+            template = Slice(template,input_sheet,force_odd=True,
+                             min_matrix_radius=min_matrix_radius)
+
+        # Note: if passed in, mask is shared between CFs (but not if created here)
+        if not hasattr(mask,'view'):
+            mask = _create_mask(patterngenerator.Constant(),
+                               template.compute_bounds(input_sheet),
+                               input_sheet,True,0.5)
+
+
+
+        self._has_norm_total=np.array([0],dtype=np.int32)
+        self._norm_total=np.array([0.0],dtype=np.float64)
+
+        self.mask=mask
+        weights_slice = self._create_input_sheet_slice(input_sheet,x,y,template,min_matrix_radius=min_matrix_radius)
+        self.weights = weights_slice.submatrix(cf.weights)
+
+        # JAHACKALERT the TransferFn cannot be applied in SharedWeightCF
+        # - another inconsistency in the class tree design - there
+        # should be nothing in the parent class that is ignored in its
+        # children.  Probably need to extract some functionality of
+        # ConnectionField into a shared abstract parent class.
+        # We have agreed to make this right by adding a constant property that
+        # will be set true if the learning should be active
+        # The SharedWeightCFProjection class and its anccestors will
+        # have this property set to false which means that the
+        # learning will be deactivated
+
+
+class SharedWeightSparseCFProjection(SparseCFProjection):
+    """
+    A Projection with a single set of sparse weights, shared by all units.
+
+    Otherwise similar to SparseCFProjection, except that learning is
+    currently disabled.
+    """
+
+    learning_fn = param.ClassSelector(CFPLearningFn,CFPLF_Identity(),constant=True)
+    weights_output_fns = param.HookList(default=[CFPOF_SharedWeight()])
+    precedence = param.Number(default=0.5)
+
+
+    cf_type = param.Parameter(default=SparseConnectionField,doc="""
+        Type of ConnectionField to use when creating individual CFs.""")
+
+    learning_fn = param.Callable(default=CFPLF_Hebbian_Sparse,doc="""
+        Function for computing changes to the weights based on one activation step.""")
+
+    response_fn = param.Callable(default=CFPRF_DotProduct_Sparse,doc="""
+        Function for computing the Projection response to an input pattern.""")
+
+    weights_output_fns = param.HookList(default=[CFPOF_DivisiveNormalizeL1_Sparse],doc="""
+        Functions applied to each CF after learning.""")
+
+    initialized = param.Boolean(default=False)
+
+    def __init__(self,**params):
+        """
+        Initialize the Projection with a single cf_type object
+        (typically a ConnectionField),
+        """
+        # We don't want the whole set of cfs initialized, but we
+        # do want anything that CFProjection defines.
+        super(SharedWeightCFProjection,self).__init__(initialize_cfs=False,**params)
+
+        # We want the sharedcf to be located on the grid, so use the
+        # center of a unit
+        sheet_rows,sheet_cols=self.src.shape
+        # arbitrary (e.g. could use 0,0)
+        center_row,center_col = sheet_rows/2,sheet_cols/2
+        center_unitxcenter,center_unitycenter=self.src.matrixidx2sheet(center_row,
+                                                                       center_col)
+
+
+        self.__sharedcf=self.cf_type(self.src,
+                                     x=center_unitxcenter,
+                                     y=center_unitycenter,
+                                     template=self._slice_template,
+                                     weights_generator=self.weights_generator,
+                                     mask=self.mask_template,
+                                     output_fns=[wof.single_cf_fn for wof in self.weights_output_fns],
+                                     min_matrix_radius=self.min_matrix_radius)
+
+        self._create_cfs()
+
+
+
+    def _create_cf(self,x,y):
+        # Does not pass the mask, as it would have to be sliced
+        # for each cf, and is only used for learning.
+        CF = SharedWeightCF(self.__sharedcf,self.src,x=x,y=y,
+                            template=self._slice_template,
+                            min_matrix_radius=self.min_matrix_radius,
+                            mask=self.mask_template)
+
+        return CF
+
+
+    def learn(self):
+        """
+        Because of how output functions are applied, it is not currently
+        possible to use learning functions and learning output functions for
+        SharedWeightCFProjections, so we disable them here.
+        """
+        pass
+
+
+    def apply_learn_output_fns(self,active_units_mask=True):
+        """
+        Because of how output functions are applied, it is not currently
+        possible to use learning functions and learning output functions for
+        SharedWeightCFProjections, so we disable them here.
+        """
+        pass
+
+
+    def n_bytes(self):
+        return self.activity.nbytes + self.__sharedcf.weights.nbytes + \
+               sum([cf.input_sheet_slice.nbytes
+                    for cf,i in CFIter(self)()])
+
 
 
 if not use_sparse:
