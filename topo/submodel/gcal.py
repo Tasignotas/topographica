@@ -12,7 +12,12 @@ import topo.transferfn.misc
 from topo.submodel import Model, ArraySpec, order_projections # pyflakes:ignore (API import)
 from topo.submodel.earlyvision import EarlyVisionModel
 
-from topo.sparse.sparsecf import SparseConnectionField, CFPLF_Hebbian_Sparse, CFPOF_DivisiveNormalizeL1_Sparse, CFPRF_DotProduct_Sparse, CFPRF_DotProduct_Sparse_GPU, CFPLF_Hebbian_Sparse_GPU, CFPOF_DivisiveNormalizeL1_Sparse_GPU, compute_sparse_joint_norm_totals
+from topo.sparse.sparsecf import SparseConnectionField, SparseConnectionField, CFPLF_Hebbian_Sparse, \
+                                 CFPOF_DivisiveNormalizeL1_Sparse, CFPRF_DotProduct_Sparse, compute_sparse_joint_norm_totals
+
+from topo.gpu.projection import CFPRF_DotProduct_Sparse_GPU, CFPLF_Hebbian_Sparse_GPU, CFPOF_DivisiveNormalizeL1_Sparse_GPU, \
+                                GPUSparseCFProjection
+from topo.gpu.sheet import compute_sparse_gpu_joint_norm_totals
 
 
 @Model.definition
@@ -243,7 +248,12 @@ class SparseGPUGCAL(ModelGCAL):
     and runs on GPU.
     """
 
-    @Model.SparseCFProjection
+    @Model.GPUSettlingCFSheet
+    def V1(self, properties):
+        params = super(SparseGPUGCAL, self).V1(properties)
+        return dict(params, joint_norm_fn=compute_sparse_gpu_joint_norm_totals)
+
+    @Model.GPUSparseCFProjection
     def V1_afferent(self, src_properties, dest_properties):
         params = super(SparseGPUGCAL, self).V1_afferent(src_properties, dest_properties)
         return dict(params[0],
@@ -252,7 +262,21 @@ class SparseGPUGCAL(ModelGCAL):
                     learning_fn = CFPLF_Hebbian_Sparse_GPU,
                     weights_output_fns = [CFPOF_DivisiveNormalizeL1_Sparse_GPU])
 
-    @Model.SettlingCFSheet
-    def V1(self, properties):
-        params = super(SparseGPUGCAL, self).V1(properties)
-        return dict(params, joint_norm_fn=compute_sparse_joint_norm_totals)
+    @Model.GPUSparseCFProjection
+    def lateral_excitatory(self, src_properties, dest_properties):
+        params = super(SparseGPUGCAL, self).lateral_excitatory(src_properties, dest_properties)
+        return dict(params,
+                    cf_type = SparseConnectionField,
+                    response_fn = CFPRF_DotProduct_Sparse_GPU,
+                    learning_fn = CFPLF_Hebbian_Sparse_GPU,
+                    weights_output_fns = [CFPOF_DivisiveNormalizeL1_Sparse_GPU])
+
+    @Model.GPUSparseCFProjection
+    def lateral_inhibitory(self, src_properties, dest_properties):
+        params = super(SparseGPUGCAL, self).lateral_inhibitory(src_properties, dest_properties)
+        return dict(params,
+                    cf_type = SparseConnectionField,
+                    response_fn = CFPRF_DotProduct_Sparse_GPU,
+                    learning_fn = CFPLF_Hebbian_Sparse_GPU,
+                    weights_output_fns = [CFPOF_DivisiveNormalizeL1_Sparse_GPU])
+
