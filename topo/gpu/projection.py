@@ -16,6 +16,7 @@ def CFPOF_DivisiveNormalizeL1_Sparse_GPU(projection):
     """
     Divisive normalisation computed on the GPU
     """
+    return
     if not projection.has_norm_total:
         projection.weights_gpu.mv(projection.norm_ones_gpu, y=projection.norm_total_gpu, autosync=False)
     
@@ -30,6 +31,7 @@ def CFPLF_Hebbian_Sparse_GPU(projection):
     Sparse CF Projection learning function applying Hebbian learning
     to the weights in a projection.
     """
+    return
     single_conn_lr = projection.learning_rate/projection.n_units
     # Transfering source and destination activities:
     src_activity_gpu = gpuarray.to_gpu_async(np.ravel(projection.src.activity).astype(np.float32), )
@@ -50,7 +52,16 @@ def CFPRF_DotProduct_Sparse_GPU(projection):
     """
     projection.input_buffer_pagelocked[:] = np.ravel(projection.input_buffer).astype(np.float32)  
     projection.input_buffer_gpu = gpuarray.to_gpu_async(projection.input_buffer_pagelocked, stream=projection.pycuda_stream)
-    projection.weights_gpu.mv(projection.input_buffer_gpu, alpha=projection.strength, y=projection.activity_gpu_buffer, autosync=False, stream=projection.pycuda_stream)
+
+    cusparse.cusparseSetStream(projection.weights_gpu.handle, projection.pycuda_stream.handle)
+
+    cusparse.cusparseShybmv(projection.weights_gpu.handle, cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE, projection.strength, projection.weights_gpu.descr, projection.hyb, projection.input_buffer_gpu, 0.0, projection.activity_gpu_buffer)
+
+    # projection.weights_gpu.mv(projection.input_buffer_gpu, alpha=projection.strength, y=projection.activity_gpu_buffer, autosync=False, stream=projection.pycuda_stream)
+
+
+
+
     projection.activity_gpu_buffer.get_async(ary=projection.activity, stream=projection.pycuda_stream)
 
 
@@ -92,6 +103,12 @@ class GPUSparseCFProjection(SparseCFProjection):
         # Transfering the weights:
         self.pycuda_stream = cuda.Stream()
         self.weights_gpu = cusparse.CSR.to_CSR(self.weights.toSparseArray().transpose())
+
+        self.hyb = cusparse.cusparseCreateHybMat()
+
+        cusparse.cusparseScsr2hyb(self.weights_gpu.handle, self.weights_gpu.shape[0], self.weights_gpu.shape[1], self.weights_gpu.descr, self.weights_gpu.Val, self.weights_gpu.RowPtr, self.weights_gpu.ColInd, self.hyb, 1, cusparse.CUSPARSE_HYB_PARTITION_AUTO)
+
+
         # Getting the row and columns indices for the *transposed* matrix. Used for Hebbian learning and normalisation:
         nzcols, nzrows = self.weights.nonzero()
         tups = sorted(zip(nzrows, nzcols))

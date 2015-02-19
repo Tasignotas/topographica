@@ -15,6 +15,7 @@ cusparse.init()
 
 
 def compute_sparse_gpu_joint_norm_totals(projlist,active_units_mask=True):
+    return
     assert len(projlist)>=1
     
     joint_sum = gpuarray.zeros((projlist[0].weights_gpu.shape[0], ), np.float32)
