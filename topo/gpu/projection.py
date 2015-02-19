@@ -53,15 +53,11 @@ def CFPRF_DotProduct_Sparse_GPU(projection):
     projection.input_buffer_pagelocked[:] = np.ravel(projection.input_buffer).astype(np.float32)  
     projection.input_buffer_gpu = gpuarray.to_gpu_async(projection.input_buffer_pagelocked, stream=projection.pycuda_stream)
 
-    cusparse.cusparseSetStream(projection.weights_gpu.handle, projection.pycuda_stream.handle)
+    # cusparse.cusparseSetStream(projection.weights_gpu.handle, projection.pycuda_stream.handle)
 
-    cusparse.cusparseShybmv(projection.weights_gpu.handle, cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE, projection.strength, projection.weights_gpu.descr, projection.hyb, projection.input_buffer_gpu, 0.0, projection.activity_gpu_buffer)
+    # cusparse.cusparseShybmv(projection.weights_gpu.handle, cusparse.CUSPARSE_OPERATION_NON_TRANSPOSE, projection.strength, projection.weights_gpu.descr, projection.hyb, projection.input_buffer_gpu, 0.0, projection.activity_gpu_buffer)
 
-    # projection.weights_gpu.mv(projection.input_buffer_gpu, alpha=projection.strength, y=projection.activity_gpu_buffer, autosync=False, stream=projection.pycuda_stream)
-
-
-
-
+    projection.weights_gpu.mv(projection.input_buffer_gpu, alpha=projection.strength, y=projection.activity_gpu_buffer, autosync=False, stream=projection.pycuda_stream)
     projection.activity_gpu_buffer.get_async(ary=projection.activity, stream=projection.pycuda_stream)
 
 
@@ -104,9 +100,9 @@ class GPUSparseCFProjection(SparseCFProjection):
         self.pycuda_stream = cuda.Stream()
         self.weights_gpu = cusparse.CSR.to_CSR(self.weights.toSparseArray().transpose())
 
-        self.hyb = cusparse.cusparseCreateHybMat()
+        # self.hyb = cusparse.cusparseCreateHybMat()
 
-        cusparse.cusparseScsr2hyb(self.weights_gpu.handle, self.weights_gpu.shape[0], self.weights_gpu.shape[1], self.weights_gpu.descr, self.weights_gpu.Val, self.weights_gpu.RowPtr, self.weights_gpu.ColInd, self.hyb, 1, cusparse.CUSPARSE_HYB_PARTITION_AUTO)
+        # cusparse.cusparseScsr2hyb(self.weights_gpu.handle, self.weights_gpu.shape[0], self.weights_gpu.shape[1], self.weights_gpu.descr, self.weights_gpu.Val, self.weights_gpu.RowPtr, self.weights_gpu.ColInd, self.hyb, 1, cusparse.CUSPARSE_HYB_PARTITION_AUTO)
 
 
         # Getting the row and columns indices for the *transposed* matrix. Used for Hebbian learning and normalisation:
