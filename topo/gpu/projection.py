@@ -124,7 +124,7 @@ class GPUSparseCFProjection(SparseCFProjection):
         # Kernel that calculates the learning:
         self.hebbian_kernel = ElementwiseKernel(
                         "float single_conn_lr, int *row, int *col, float *src_activity, float *dest_activity, float *result",
-                        "result[i] += single_conn_lr * src_activity[row[i]] * dest_activity[col[i]]",
+                        "result[i] += single_conn_lr * src_activity[col[i]] * dest_activity[row[i]]",
                         "hebbian_learning")
 
         params['apply_output_fns_init'] = should_apply
