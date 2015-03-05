@@ -17,7 +17,7 @@ def CFPOF_DivisiveNormalizeL1_Sparse_GPU(projection):
     Divisive normalisation computed on the GPU
     """
     if not projection.has_norm_total:
-        projection.weights_gpu.mv(projection.norm_ones_gpu, y=projection.norm_total_gpu, autosync=False)
+        projection.weights_gpu.mv(projection.norm_ones_gpu, y=projection.norm_total_gpu, autosync=True)
     
     projection.norm_total_gpu = 1.0/projection.norm_total_gpu
 
@@ -32,14 +32,14 @@ def CFPLF_Hebbian_Sparse_GPU(projection):
     """
     single_conn_lr = projection.learning_rate/projection.n_units
     # Transfering source and destination activities:
-    src_activity_gpu = gpuarray.to_gpu_async(np.ravel(projection.src.activity).astype(np.float32), )
-    dest_activity_gpu = gpuarray.to_gpu_async(np.ravel(projection.dest.activity).astype(np.float32), )
+    src_activity_gpu = gpuarray.to_gpu(np.ravel(projection.src.activity).astype(np.float32), )
+    dest_activity_gpu = gpuarray.to_gpu(np.ravel(projection.dest.activity).astype(np.float32), )
 
     # Computing Hebbian learning weights:
     projection.hebbian_kernel(single_conn_lr, projection.nzrows_gpu, projection.nzcols_gpu, src_activity_gpu, dest_activity_gpu, projection.weights_gpu.Val, range=slice(0, projection.nzcount, 1))
 
     # Normalisation values:
-    projection.weights_gpu.mv(projection.norm_ones_gpu, y=projection.norm_total_gpu, autosync=False)
+    projection.weights_gpu.mv(projection.norm_ones_gpu, y=projection.norm_total_gpu, autosync=True)
     projection.has_norm_total = True
 
 
@@ -49,9 +49,9 @@ def CFPRF_DotProduct_Sparse_GPU(projection):
     between incoming activities and CF weights. Uses GPU.
     """
     projection.input_buffer_pagelocked[:] = np.ravel(projection.input_buffer).astype(np.float32)  
-    projection.input_buffer_gpu = gpuarray.to_gpu_async(projection.input_buffer_pagelocked, stream=projection.pycuda_stream)
-    projection.weights_gpu.mv(projection.input_buffer_gpu, alpha=projection.strength, y=projection.activity_gpu_buffer, autosync=False, stream=projection.pycuda_stream)
-    projection.activity_gpu_buffer.get_async(ary=projection.activity, stream=projection.pycuda_stream)
+    projection.input_buffer_gpu = gpuarray.to_gpu(projection.input_buffer_pagelocked)
+    projection.weights_gpu.mv(projection.input_buffer_gpu, alpha=projection.strength, y=projection.activity_gpu_buffer, autosync=True)
+    projection.activity_gpu_buffer.get_async(ary=projection.activity)
 
 
 
