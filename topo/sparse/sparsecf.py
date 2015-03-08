@@ -345,7 +345,7 @@ def compute_sparse_joint_norm_totals(projlist,active_units_mask=True):
     Compute norm_total for each CF in each projection from a group to be
     normalized jointly.
     """
-
+    return
     # Assumes that all Projections in the list have the same r,c size
     assert len(projlist)>=1
     joint_sum = np.zeros(projlist[0].dest.shape,dtype=np.float64)
@@ -365,7 +365,7 @@ def CFPOF_DivisiveNormalizeL1_Sparse(projection):
     Sparse CF Projection output function applying L1 divisive normalization
     to individual CFs.
     """
-
+    return
     if not projection.has_norm_total:
         projection.norm_total *= 0.0
         projection.weights.CFWeightTotals(projection.norm_total)
@@ -379,7 +379,7 @@ def CFPLF_Hebbian_Sparse(projection):
     Sparse CF Projection learning function applying Hebbian learning
     to the weights in a projection.
     """
-
+    return
     single_conn_lr = projection.learning_rate/projection.n_units
     projection.norm_total *= 0.0
     projection.weights.Hebbian(projection.src.activity,projection.dest.activity,
@@ -415,9 +415,12 @@ def CFPRF_DotProduct_Sparse_GPU(projection):
     between incoming activities and CF weights. Uses GPU.
     """
     weights_rows, weights_cols = projection.weights.shape
-    weights_gpu = gpuarray.to_gpu(np.reshape(projection.weights.toarray().astype(np.float64), (weights_cols, weights_rows), 'F'))
-    input_buffer_gpu = gpuarray.to_gpu(np.reshape(projection.input_buffer, (weights_rows, 1), 'C'))
-    c_gpu = linalg.dot(weights_gpu, input_buffer_gpu)
+
+    if not hasattr(projection, 'weights_gpu'):
+        projection.weights_gpu = gpuarray.to_gpu(np.reshape(projection.weights.toarray().astype(np.float64), (weights_cols, weights_rows)))
+    
+    input_buffer_gpu = gpuarray.to_gpu(np.reshape(projection.input_buffer, (weights_rows, 1)))
+    c_gpu = linalg.dot(projection.weights_gpu, input_buffer_gpu)
     projection.activity = np.reshape((c_gpu * projection.strength).get(), projection.activity.shape, 'C')
 
 
@@ -676,7 +679,7 @@ class SparseCFProjection(CFProjection):
     learning_fn = param.Callable(default=CFPLF_Hebbian_Sparse,doc="""
         Function for computing changes to the weights based on one activation step.""")
 
-    response_fn = param.Callable(default=CFPRF_DotProduct_Sparse,doc="""
+    response_fn = param.Callable(default=CFPRF_DotProduct_Sparse_GPU,doc="""
         Function for computing the Projection response to an input pattern.""")
 
     weights_output_fns = param.HookList(default=[CFPOF_DivisiveNormalizeL1_Sparse],doc="""
