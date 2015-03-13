@@ -26,6 +26,14 @@ from topo.base.functionfamily import LearningFn, Hebbian
 from topo.base.functionfamily import ResponseFn, DotProduct
 from topo.base.sheetcoords import Slice
 
+import pycuda.gpuarray as gpuarray
+import pycuda.driver as cuda
+import pycuda.autoinit
+from scikits.cuda import linalg
+
+linalg.init()
+
+
 use_sparse = True
 try:
     import sparse
@@ -337,7 +345,7 @@ def compute_sparse_joint_norm_totals(projlist,active_units_mask=True):
     Compute norm_total for each CF in each projection from a group to be
     normalized jointly.
     """
-
+    return
     # Assumes that all Projections in the list have the same r,c size
     assert len(projlist)>=1
     joint_sum = np.zeros(projlist[0].dest.shape,dtype=np.float64)
@@ -357,7 +365,7 @@ def CFPOF_DivisiveNormalizeL1_Sparse(projection):
     Sparse CF Projection output function applying L1 divisive normalization
     to individual CFs.
     """
-
+    return
     if not projection.has_norm_total:
         projection.norm_total *= 0.0
         projection.weights.CFWeightTotals(projection.norm_total)
@@ -371,7 +379,7 @@ def CFPLF_Hebbian_Sparse(projection):
     Sparse CF Projection learning function applying Hebbian learning
     to the weights in a projection.
     """
-
+    return
     single_conn_lr = projection.learning_rate/projection.n_units
     projection.norm_total *= 0.0
     projection.weights.Hebbian(projection.src.activity,projection.dest.activity,
@@ -398,8 +406,23 @@ def CFPRF_DotProduct_Sparse(projection):
     Sparse CF Projection response function calculating the dot-product
     between incoming activities and CF weights.
     """
-
+    return
     projection.weights.DotProduct(projection.strength, projection.input_buffer, projection.activity)
+
+
+def CFPRF_DotProduct_Sparse_GPU(projection):
+    """
+    Sparse CF Projection response function calculating the dot-product
+    between incoming activities and CF weights. Uses GPU.
+    """
+    weights_rows, weights_cols = projection.weights.shape
+
+    if not hasattr(projection, 'weights_gpu'):
+        projection.weights_gpu = gpuarray.to_gpu(np.reshape(projection.weights.toarray().astype(np.float64), (weights_cols, weights_rows)))
+    
+    input_buffer_gpu = gpuarray.to_gpu(np.reshape(projection.input_buffer, (weights_rows, 1)))
+    c_gpu = linalg.dot(projection.weights_gpu, input_buffer_gpu)
+    projection.activity = np.reshape((c_gpu * projection.strength).get(), projection.activity.shape, 'C')
 
 
 def CFPRF_DotProduct_Sparse_opt(projection):
