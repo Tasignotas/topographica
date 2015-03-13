@@ -680,7 +680,7 @@ class SparseCFProjection(CFProjection):
     learning_fn = param.Callable(default=CFPLF_Hebbian_Sparse,doc="""
         Function for computing changes to the weights based on one activation step.""")
 
-    response_fn = param.Callable(default=CFPRF_DotProduct_Sparse,doc="""
+    response_fn = param.Callable(default=CFPRF_DotProduct_Sparse_GPU,doc="""
         Function for computing the Projection response to an input pattern.""")
 
     weights_output_fns = param.HookList(default=[CFPOF_DivisiveNormalizeL1_Sparse],doc="""
