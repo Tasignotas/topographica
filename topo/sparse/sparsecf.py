@@ -406,7 +406,6 @@ def CFPRF_DotProduct_Sparse(projection):
     Sparse CF Projection response function calculating the dot-product
     between incoming activities and CF weights.
     """
-    return
     projection.weights.DotProduct(projection.strength, projection.input_buffer, projection.activity)
 
 
@@ -415,6 +414,7 @@ def CFPRF_DotProduct_Sparse_GPU(projection):
     Sparse CF Projection response function calculating the dot-product
     between incoming activities and CF weights. Uses GPU.
     """
+    return
     weights_rows, weights_cols = projection.weights.shape
 
     if not hasattr(projection, 'weights_gpu'):
@@ -680,7 +680,7 @@ class SparseCFProjection(CFProjection):
     learning_fn = param.Callable(default=CFPLF_Hebbian_Sparse,doc="""
         Function for computing changes to the weights based on one activation step.""")
 
-    response_fn = param.Callable(default=CFPRF_DotProduct_Sparse_GPU,doc="""
+    response_fn = param.Callable(default=CFPRF_DotProduct_Sparse,doc="""
         Function for computing the Projection response to an input pattern.""")
 
     weights_output_fns = param.HookList(default=[CFPOF_DivisiveNormalizeL1_Sparse],doc="""
