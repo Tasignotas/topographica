@@ -39,6 +39,7 @@ class CFPLF_Hebbian_opt(CFPLearningFn):
     single_cf_fn = param.ClassSelector(LearningFn,default=Hebbian(),readonly=True)
 
     def __call__(self, iterator, input_activity, output_activity, learning_rate, **params):
+        return
         single_connection_learning_rate = self.constant_sum_connection_rate(iterator.proj_n_units,learning_rate)
         if single_connection_learning_rate==0:
             return

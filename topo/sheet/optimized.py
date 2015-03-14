@@ -16,6 +16,7 @@ def compute_joint_norm_totals_opt(projlist,active_units_mask):
     group to be normalized jointly.  The same assumptions are
     made as in the original function.
     """
+    return
     # Assumes that all Projections in the list have the same r,c size
     length = len(projlist)
     assert length>=1

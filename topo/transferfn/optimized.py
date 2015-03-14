@@ -35,6 +35,7 @@ class CFPOF_DivisiveNormalizeL1_opt(CFPOutputFn):
         TransferFn,DivisiveNormalizeL1(norm_value=1.0),readonly=True)
 
     def __call__(self, iterator, **params):
+        return
         cf_type=iterator.cf_type  # pyflakes:ignore (passed to weave C code)
         cfs = iterator.flatcfs  # pyflakes:ignore (passed to weave C code)
         num_cfs = len(iterator.flatcfs)  # pyflakes:ignore (passed to weave C code)
