@@ -358,7 +358,6 @@ def compute_sparse_joint_norm_totals(projlist,active_units_mask=True):
 
 
 def compute_sparse_gpu_joint_norm_totals(projlist,active_units_mask=True):
-    return
     assert len(projlist)>=1
     joint_sum = gpuarray.zeros((projlist[0].weights_gpu.shape[0], ), np.float32)
     for p in projlist:
@@ -386,7 +385,6 @@ def CFPOF_DivisiveNormalizeL1_Sparse_GPU(projection):
     '''
     Divisive normalisation computed on the GPU
     '''
-    return
     if not projection.has_norm_total:
         projection.norm_total_gpu = projection.weights_gpu.mv(projection.norm_ones_gpu, y=projection.zeros_gpu, autosync=False)
     
@@ -411,7 +409,6 @@ def CFPLF_Hebbian_Sparse_GPU(projection):
     Sparse CF Projection learning function applying Hebbian learning
     to the weights in a projection.
     """ 
-    return
     single_conn_lr = projection.learning_rate/projection.n_units
     # Transfering source and destination activities:
     src_activity_gpu = gpuarray.to_gpu(np.ravel(projection.src.activity).astype(np.float32))
@@ -974,7 +971,7 @@ class GPUSparseCFProjection(SparseCFProjection):
         # Kernel that calculates the learning:
         self.hebbian_kernel = ElementwiseKernel(
                         "float single_conn_lr, int *row, int *col, float *src_activity, float *dest_activity, float *result",
-                        "result[i] += single_conn_lr * src_activity[row[i]] * dest_activity[col[i]]",
+                        "result[i] += single_conn_lr * src_activity[col[i]] * dest_activity[row[i]]",
                         "hebbian_learning")
 
         self.apply_output_fns_init = should_apply
