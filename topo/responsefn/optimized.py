@@ -31,7 +31,7 @@ class CFPRF_DotProduct_opt(CFPResponseFn):
     single_cf_fn = param.ClassSelector(ResponseFn,DotProduct(),readonly=True)
 
     def __call__(self, iterator, input_activity, activity, strength, **params):
-
+        return
         temp_act = activity  # pyflakes:ignore (passed to weave C code)
         irows,icols = input_activity.shape
         X = input_activity.ravel()  # pyflakes:ignore (passed to weave C code)
